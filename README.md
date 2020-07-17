@@ -1,7 +1,7 @@
 # DuoBot
 
-<img src="https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true" align="right"
-     alt="Bot Profile Image" width="120" height="178">
+<img src="https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true" align="center"
+     alt="Bot Profile Image">
 
 DuoBot is a discord bot that allows users to see their League of Legends winrate with and without a duo. 
 
