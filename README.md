@@ -15,10 +15,10 @@ DuoBot is a discord bot that allows users to see their League of Legends winrate
 ## Commands
 * !duo region summonerName (For example, !duo na albert471) 
 
-*
+* !duo help
 
 ## Examples
-<img src="https://github.com/albert471/DuoBot/blob/master/Images/example.jpg?raw=true" align="center"
+<img src="https://github.com/albert471/DuoBot/blob/master/Images/example.png?raw=true" align="center"
      alt="Duo Lookup Example">
 <img src="https://github.com/albert471/DuoBot/blob/master/Images/example%20help.png?raw=true" align="center"
      alt="Help Example">
