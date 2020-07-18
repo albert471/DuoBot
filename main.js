@@ -4,15 +4,17 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.0.12
+// * @version: 1.0.13
 //=====================================================================================
+
 //todo: turn message into embed, add more features, bug test concurrency/other regions/edge cases/error cases/ 
 // if you want: change the way it stores players to acccount for name changes
+// add a !duo help command
 /** API related variables **/
 const api = ""; //Riot API key
 const apikey = `api_key=` + api; //alternative format
 
-const disctoken = ""; //Discord Token
+const disctoken = ``; //Discord Token
 
 /** Libraries the bot requires **/
 const Discord = require(`discord.js`);
@@ -81,20 +83,20 @@ async function getCache() {
 returns an array with [accountid, summonerid]. **/
 async function getID(s,server) {
 	// pull account id
-	let dataarray = [];
+	let dd = [];
 	await tApi.get(server, 'summoner.getBySummonerName', s)
 	.then(data => {
 		if (data != null) {
-			dataarray = [data.accountId, data.id];
+			dd = [data.accountId, data.id];
 		}
-		return dataarray;
+		return dd;
 	})
 	.catch(err => {
-		dataarray = [];
+		dd = [];
 		console.log(err);
-		return dataarray;
+		return dd;
 	});
-	return dataarray;
+	return dd;
 }
 
 
@@ -352,11 +354,11 @@ const onReady =
     {
     	//if ratelimited, make status indicate that there will be a wait
     	if (RateLimited == true) {
-    		let game = `the time tick by (Busy)`;
-    		client.user.setActivity(game, { type: `WATCHING` });
+    		let game = `with someone (Busy -- possible delay)    Help command: !duo help`;
+    		client.user.setActivity(game, { type: `PLAYING` });
     	} else {
-            game = `with Riot's data (Not Busy)`;
-            client.user.setActivity(game, { type: `PLAYING`});
+            game = `TV (Free to handle requests)    Help command: !duo help`;
+            client.user.setActivity(game, { type: `WATCHING`});
     	}
     },
     async getReady() {
@@ -378,7 +380,10 @@ const onMessage =  {
             return false;
         }
         region = region[0].toLowerCase();
-        if (!Object.keys(regionendpoint).includes(region))
+        if (region == "help") {
+        	onMessage.help(receivedMessage);
+        	return;
+        } else if (!Object.keys(regionendpoint).includes(region))
         {
             receivedMessage.react(xmark);
             return false;
@@ -446,6 +451,12 @@ const onMessage =  {
 			message.edit(globalReplyMessage);
 			leaveQueue();
         })
+    },
+    help(receivedMessage) {
+    	globalReplyMessage = `Hi, I'm DuoBot.  If you would like to search your summoner, please use the following command: \n`;
+    	globalReplyMessage += `!duo [region] [summoner]  (as an example: !duo na albert471)\n`;
+    	globalReplyMessage += `have questions, feedback, or a bug to report? Message me at APotS#8566 or join <https://discord.gg/zdAajBZ>.`;
+    	receivedMessage.channel.send(globalReplyMessage);
     }
 }
 
