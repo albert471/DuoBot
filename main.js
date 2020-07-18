@@ -3,13 +3,14 @@
 //                                  DuoBot.js
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
-// * @author: Albert471
-// * @version: 1.0.13
+// * @author: Albert471 (APotS#8566)
+// * @version: 1.0.14
 //=====================================================================================
 
-//todo: turn message into embed, add more features, bug test concurrency/other regions/edge cases/error cases/ 
+//todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
 // if you want: change the way it stores players to acccount for name changes
-// add a !duo help command
+// revamp caching system by rewriting object to store less info (maybe a second file)
+
 /** API related variables **/
 const api = ""; //Riot API key
 const apikey = `api_key=` + api; //alternative format
@@ -431,7 +432,11 @@ const onMessage =  {
         	//now api search the matches
         	for (let x=0; x < matchhistory.length; x++) {
         		await getMatchInfo(matchhistory[x], region);
+        		if (x%100 == 0) {
+        			message.edit(`Summoner found. Updating matches... (this might take a while)\n Progress: ${x}/${matchhistory.length}.`);
+        		}
         	}
+
         	let teammates = {};
         	for (let y=0; y< matchhistory.length; y++) {
 				teammates = analyzeMatch(matchhistory[y], teammates, accountid);
@@ -440,15 +445,49 @@ const onMessage =  {
 			//finalarr is [duos won, duos played, solos won, solos played, total played, duoers object]
 			let duowr = finalarr[0]/finalarr[1]*100;
 			let solowr = finalarr[2]/finalarr[3]*100;
-			globalReplyMessage = `Total found games: ${finalarr[4]}. \nGames with a duo: ${finalarr[1]}, won ${finalarr[0]}, Winrate: ${duowr.toFixed(2)}% \n`;
-			globalReplyMessage += `Games without a duo: ${finalarr[3]}, won ${finalarr[2]}, Winrate: ${solowr.toFixed(2)}% \n Duos found: `;
-			Object.keys(finalarr[5]).forEach(key => {
+			let totalwon = finalarr[0] + finalarr[2];
+			let totalwr = totalwon/finalarr[4]*100;
+			let color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+			const embed = new Discord.MessageEmbed()
+				.setColor(color)
+				.setTitle(summonerName)
+				.setAuthor('DuoBot', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true', 'https://discord.gg/zdAajBZ')
+				.setDescription('Calculated Duo Information')
+				.setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
+				.addFields(
+					{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + totalwr.toFixed(2) + "%" },
+					{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + duowr.toFixed(2) + "%" },
+					{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + solowr.toFixed(2) + "%" },
+					{ name: '\u200B', value: '\u200B' },
+					{ name: 'Duos (minimum 3 games played together):', value: "Win-Loss records for each of your duos." },
+				)
+				.setTimestamp()
+				.setFooter('Contact me at APotS#8566 for questions or feedback', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true');
+			duoSorted = Object.keys(finalarr[5]).sort((a,b) => {
+				return finalarr[5][b][1] - finalarr[5][a][1];
+			})
+			let maxInlines = 18;
+			duoSorted.forEach(key => {
 				//console.log(finalarr[5])
 				//console.log(key)
 				//console.log(finalarr[5][key])
-				globalReplyMessage += `${key}: ${finalarr[5][key][0]}-${finalarr[5][key][1]-finalarr[5][key][0]}.  `;
+				if (maxInlines > 0) {
+					let inline = `${finalarr[5][key][0]}-${finalarr[5][key][1]-finalarr[5][key][0]}`;
+					embed.addField(key, inline, true);
+					maxInlines--;
+				}
 			});
-			message.edit(globalReplyMessage);
+			console.log(duoSorted.length)
+			if (duoSorted.length > 18) {
+				let lastline = "";
+				for (let x=18; x<duoSorted.length; x++) {
+					let duoArray = finalarr[5][duoSorted[x]];
+					lastline += `**${duoSorted[x]}:** ${duoArray[0]}-${duoArray[1]-duoArray[0]}\n`;
+				}
+				embed.addField('Other Duos:', lastline, false);
+			}
+			message.edit(`Duo Statistics for ${summonerName}.`);
+			message.edit(embed);
 			leaveQueue();
         })
     },
