@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.0.16
+// * @version: 1.0.17
 //=====================================================================================
 
 //todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
@@ -148,7 +148,10 @@ function analyzeMatch(matchid, teammates, accountid) {
 	}
 	//find participantid of analyzed player by matching accountId
 	const partId = matchcache[matchid]['participantIdentities'];
+	console.log(matchid)
 	let foundId = partId.find(p => {
+		console.log(accountid);
+		console.log(p['player']['accountId'])
 		return p['player']['accountId'] == accountid;
 	})['participantId'];
 	//find team of summoner
@@ -368,8 +371,7 @@ const onMessage =  {
         summonerName = ``;
         //use regex to find the region and summoner name
         let region = message.match(/(?<=!duo )[\w]+/i)
-        if (!region || region.length != 1)
-        {
+        if (!region || region.length != 1) {
             receivedMessage.react(xmark);
             return false;
         }
@@ -377,22 +379,19 @@ const onMessage =  {
         if (region == "help") {
         	onMessage.help(receivedMessage);
         	return;
-        } else if (!Object.keys(regionendpoint).includes(region))
-        {
+        } else if (!Object.keys(regionendpoint).includes(region)) {
             receivedMessage.react(xmark);
             return false;
         }
         region = regionendpoint[region];
         let reg = /(?<=!duo [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i
         summonerName = message.match(reg)
-        if (!summonerName || summonerName.length != 1)
-        {
+        if (!summonerName || summonerName.length != 1) {
             receivedMessage.react(xmark);
             return false;
         }
         summonerName = summonerName[0].toLowerCase();
-        if (summonerName.length > 16 || summonerName.length < 3)
-        {
+        if (summonerName.length > 16 || summonerName.length < 3) {
             receivedMessage.react(xmark);
             return false;
         }
@@ -425,7 +424,8 @@ const onMessage =  {
         	//now api search the matches
         	for (let x=0; x < matchhistory.length; x++) {
         		await getMatchInfo(matchhistory[x], region);
-        		if (x%50 == 0|| x==10) { //progress bar every 100 matches (and a quick one at 10 to check for ratelimit)
+        		//progress bar every 50 matches (and a quick one at 10 to check for ratelimit)
+        		if (x%50 == 0 || x==10) {
         			message.edit(`Summoner found. Updating matches... (this might take a while)\n Progress: ${x}/${matchhistory.length}.`);
         		}
         	}
@@ -440,23 +440,12 @@ const onMessage =  {
 			let solowr = finalarr[2]/finalarr[3]*100;
 			let totalwon = finalarr[0] + finalarr[2];
 			let totalwr = totalwon/finalarr[4]*100;
+			let winrateArray = [duowr, solowr, totalwr];
 			//handle NaN% bug
-			if (Number.isNaN(duowr)) {
-				duowr = `N/A`;
-			} else {
-				duowr = duowr.toFixed(2);
+			for (let x=0; x<winrateArray.length; x++) {
+				winrateArray[x] = Number.isNaN(winrateArray[x]) ? `N/A` : `${parseFloat(winrateArray[x]).toFixed(2)}%`;
 			}
-			if (Number.isNaN(solowr)) {
-				solowr = `N/A`;
-			} else {
-				solowr = solowr.toFixed(2);
-			}
-			if (Number.isNaN(totalwr)) {
-				totalwr = `N/A`;
-			} else {
-				totalwr = totalwr.toFixed(2);
-			}
-			let color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+			let color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
 			const embed = new Discord.MessageEmbed()
 				.setColor(color)
 				.setTitle(summonerName)
@@ -464,17 +453,19 @@ const onMessage =  {
 				.setDescription('Calculated Duo Information')
 				.setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
 				.addFields(
-					{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + totalwr + "%" },
-					{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + duowr + "%" },
-					{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + solowr + "%" },
+					{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + winrateArray[2]},
+					{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + winrateArray[0]},
+					{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + winrateArray[1]},
 					{ name: '\u200B', value: '\u200B' },
-					{ name: 'Duos (minimum 3 games played together):', value: "Win-Loss records for each of your duos." },
 				)
 				.setTimestamp()
 				.setFooter('Contact me at APotS#8566 for questions or feedback', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true');
 			duoSorted = Object.keys(finalarr[5]).sort((a,b) => {
 				return finalarr[5][b][1] - finalarr[5][a][1];
 			})
+			if (duoSorted.length > 0) {
+				embed.addField('Duos (minimum 3 games played together):',"Win-Loss records for each of your duos.", false);
+			}
 			let maxInlines = 18;
 			duoSorted.forEach(key => {
 				if (maxInlines > 0) {
