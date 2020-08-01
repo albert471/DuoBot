@@ -3,8 +3,8 @@
 //                                  DuoBot.js
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
-// * @author: Albert471 (APotS#8566)
-// * @version: 1.0.14
+// * @author: Albert471
+// * @version: 1.0.16
 //=====================================================================================
 
 //todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
@@ -51,11 +51,10 @@ const flexqueue = 440;
 const soloduoqueue = 420;
 
 /** Other global variables **/
-let summ = ''; //remember to set this from message event listener
 let champjson = {};
 let globalReplyMessage = ``;
 let threshold = 3;
-let queue = 0;
+let queue = 0; //number of items in queue
 
 /* -------------------------------------*/
 //reads champion file to the champjson object
@@ -111,15 +110,12 @@ async function getmatchhistory(queue,region, accountid) {
 		await tApi.get(region, 'match.getMatchlist', accountid, { queue: queue, beginTime: 1578477600000, beginIndex: counter })
 		.then(data => {
 			counter += 100;
-			//console.log(data);
-			if (data == null) {
+			if (data == null || data == undefined || data['matches'] == undefined) {
 				numreturned = 0;
 				return;
 			}
 			numreturned = data['matches'].length;
-			//console.log(data['matches'])
 			for (let x=0; x < numreturned; x++) {
-				//console.log(data['matches'][x])
 				matchhistory.push(data['matches'][x]['gameId']);
 			}
 		});
@@ -153,8 +149,6 @@ function analyzeMatch(matchid, teammates, accountid) {
 	//find participantid of analyzed player by matching accountId
 	const partId = matchcache[matchid]['participantIdentities'];
 	let foundId = partId.find(p => {
-		//console.log(p['player']['accountId'])
-		//console.log(accountid);
 		return p['player']['accountId'] == accountid;
 	})['participantId'];
 	//find team of summoner
@@ -219,7 +213,6 @@ function finalanalysis(threshold, teammates, matchhistory, accountid) {
 			duoers[allplayers[i]] = teammates[allplayers[i]];
 		}
 	}
-	//console.log(duoers);
 	for (let x=0; x<allplayers.length; x++) {
 		if (teammates[allplayers[x]].length >= threshold) {
 			duogames = duogames.concat(teammates[allplayers[x]])
@@ -432,7 +425,7 @@ const onMessage =  {
         	//now api search the matches
         	for (let x=0; x < matchhistory.length; x++) {
         		await getMatchInfo(matchhistory[x], region);
-        		if (x%100 == 0) {
+        		if (x%50 == 0|| x==10) { //progress bar every 100 matches (and a quick one at 10 to check for ratelimit)
         			message.edit(`Summoner found. Updating matches... (this might take a while)\n Progress: ${x}/${matchhistory.length}.`);
         		}
         	}
@@ -447,6 +440,22 @@ const onMessage =  {
 			let solowr = finalarr[2]/finalarr[3]*100;
 			let totalwon = finalarr[0] + finalarr[2];
 			let totalwr = totalwon/finalarr[4]*100;
+			//handle NaN% bug
+			if (Number.isNaN(duowr)) {
+				duowr = `N/A`;
+			} else {
+				duowr = duowr.toFixed(2);
+			}
+			if (Number.isNaN(solowr)) {
+				solowr = `N/A`;
+			} else {
+				solowr = solowr.toFixed(2);
+			}
+			if (Number.isNaN(totalwr)) {
+				totalwr = `N/A`;
+			} else {
+				totalwr = totalwr.toFixed(2);
+			}
 			let color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
 			const embed = new Discord.MessageEmbed()
 				.setColor(color)
@@ -455,9 +464,9 @@ const onMessage =  {
 				.setDescription('Calculated Duo Information')
 				.setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
 				.addFields(
-					{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + totalwr.toFixed(2) + "%" },
-					{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + duowr.toFixed(2) + "%" },
-					{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + solowr.toFixed(2) + "%" },
+					{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + totalwr + "%" },
+					{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + duowr + "%" },
+					{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + solowr + "%" },
 					{ name: '\u200B', value: '\u200B' },
 					{ name: 'Duos (minimum 3 games played together):', value: "Win-Loss records for each of your duos." },
 				)
@@ -468,16 +477,12 @@ const onMessage =  {
 			})
 			let maxInlines = 18;
 			duoSorted.forEach(key => {
-				//console.log(finalarr[5])
-				//console.log(key)
-				//console.log(finalarr[5][key])
 				if (maxInlines > 0) {
 					let inline = `${finalarr[5][key][0]}-${finalarr[5][key][1]-finalarr[5][key][0]}`;
 					embed.addField(key, inline, true);
 					maxInlines--;
 				}
 			});
-			console.log(duoSorted.length)
 			if (duoSorted.length > 18) {
 				let lastline = "";
 				for (let x=18; x<duoSorted.length; x++) {
