@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.0.17
+// * @version: 1.1.4
 //=====================================================================================
 
 //todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
@@ -148,10 +148,7 @@ function analyzeMatch(matchid, teammates, accountid) {
 	}
 	//find participantid of analyzed player by matching accountId
 	const partId = matchcache[matchid]['participantIdentities'];
-	console.log(matchid)
 	let foundId = partId.find(p => {
-		console.log(accountid);
-		console.log(p['player']['accountId'])
 		return p['player']['accountId'] == accountid;
 	})['participantId'];
 	//find team of summoner
@@ -185,9 +182,7 @@ function analyzeMatch(matchid, teammates, accountid) {
 
 /** returns whether the searched summer won MATCHID.  function errors if they didnt play */
 function getWinOrLoss(matchid, accountid) {
-	if (!matchid in matchcache) {
-		return;
-	}
+	if (!matchid in matchcache) return;
 	// get participantid of searched player
 	const partId = matchcache[matchid]['participantIdentities'];
 	let foundId = partId.find(p => {
@@ -198,6 +193,14 @@ function getWinOrLoss(matchid, accountid) {
 	return part.find(pl => {
 		return pl['participantId'] == foundId;
 	})['stats']['win'];
+}
+
+/** returns true if the two matches have the same queue.  soft errors if it doesn't exist */
+function compareQueues(matchid1, matchid2) {
+	if (!matchid1 in matchcache || !matchid2 in matchcache) return;
+	let queue1 = matchcache[matchid1]["queueId"];
+	let queue2 = matchcache[matchid2]["queueId"];
+	return queue1 == queue2;
 }
 
 /** takes all duo games from the duo object, adds them all to duomatchhistory.  calculates % wr of
@@ -282,6 +285,35 @@ function getTimeStamp(time)
 	return dateTime;
 }
 
+/** performs an insertion sort on the mostly-sorted matchhistory ARRAY */
+function insertionSort(array) {
+  for (let i = 1; i < array.length; i++) {
+    let j = i - 1;
+    let temp = array[i]
+    while (j >= 0 && matchcache[array[j]] < matchcache[temp]) { 
+      array[j + 1] = array[j];
+      j--;
+    }
+    array[j+1] = temp;
+  }
+  return array;
+}
+
+/** create and return the boilerplate of an embed for SummonerName. */
+/** afterwards, you need to add fields and the description */
+function createEmbed(summonerName, description) {
+	let color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+	const embed = new Discord.MessageEmbed()
+		.setColor(color)
+		.setTitle(summonerName)
+		.setDescription(description)
+		.setAuthor('DuoBot', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true', 'https://discord.gg/zdAajBZ')
+		.setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
+		.setTimestamp()
+		.setFooter('Contact me at APotS#8566 for questions or feedback', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true');
+		return embed;
+
+}
 /** returns the name of the champ with the given ID **/
 function getChampFromId(id) {
 	return Object.keys(champjson.data).filter( c => {
@@ -324,12 +356,12 @@ client.on(`message`, (receivedMessage) =>
     if (receivedMessage.guild == null) return;
     if (receivedMessage.author.bot) return;
 
-    //the lookup bot: !User [region] [name] ie !user na hugs
-    if (receivedMessage.content.search(/^!duo/i) > -1)
-    {
-        onMessage.lookupName(receivedMessage);
-        return;
-    }
+    //the lookup bot: !User [region] [name] ie !duo na hugs
+    // losers queue: !duolosers [region] [name] !duolosers na hugs
+    if (receivedMessage.content.search(/^!duo/i) > -1) {
+	    onMessage.lookupMsg(receivedMessage);
+	    return;
+	}
 });
 
 
@@ -361,16 +393,128 @@ const onReady =
     async getReady() {
     	await loadChamps();
    		await getCache();
+   		console.log(`cachesize: ${Object.keys(matchcache).length}`)
     }
 }
 
 const onMessage =  {
-	async lookupName(receivedMessage)
+	async losers(receivedMessage, matchhistory, accountid, sentmsg) {
+		let totalstreakarray = [];
+		let totalwon = 0;
+		let remakecount = 0;
+		let longeststreak = 0;
+		for (let streak = 1; streak <= 4; streak++) {
+			//matchhistory array is in backwards order, so we need to iterate in reverse
+			//in addition, there is a split between solo/flex, so it has to account for that as well
+			let currentstreak = 0;
+			let totalcounted = 0;
+			let won = 0;
+			for (let x=matchhistory.length - 1; x >= 0; x--) {
+				let queuecheck = x < matchhistory.length - 1 ? compareQueues(matchhistory[x], matchhistory[x+1]) : true;
+				if (matchcache[matchhistory[x]]['gameDuration'] <= 300) {
+					remakecount++;
+					continue;
+				}
+				let wonThisOne = getWinOrLoss(matchhistory[x], accountid);
+				if (currentstreak >= streak && queuecheck) {
+					totalcounted++;
+					if (wonThisOne) {
+						won++;
+					}
+				}
+				if (wonThisOne) {
+					totalwon++;
+					currentstreak = 0;
+				} else if (!queuecheck) {
+					currentstreak = 1;
+				} else {
+					currentstreak++;
+					if (currentstreak >= longeststreak) {
+						longeststreak = currentstreak;
+					}
+				}
+				if (streak == 1) {
+				console.log(`${matchhistory[x]}:${matchcache[matchhistory[x]]["gameCreation"]}won:${wonThisOne}, currentstreak:${currentstreak}, totalcounted: ${totalcounted}, totalwon: ${totalwon}`);
+			}
+			}
+			totalstreakarray.push(won);
+			totalstreakarray.push(totalcounted);
+		}
+		totalwon = totalwon / 4; //counted each match 4 times, so have to divide here
+		remakecount = remakecount / 4;
+		let totalwinrate = `${parseFloat(totalwon/(matchhistory.length - remakecount)*100).toFixed(2)}%`;
+		//analyzed matchhistory.length matches, found totalstreakarray[1,3,5,7] games respectively with winrates...
+		let color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+		const embed = createEmbed(summonerName,'Calculated Loss Streak Information');
+		embed.addFields(
+				{ name: 'All Ranked Games:', value: 'Played ' + (matchhistory.length - remakecount) + ', Won ' + totalwon + ", Winrate: " + totalwinrate},
+			)
+		for (x=1; x <=4; x++) {
+			let gamesplayed = totalstreakarray[2*x-1];
+			let gameswon = totalstreakarray[2*x-2];
+			let winr = gamesplayed == 0 ? `N/A` : `${parseFloat(gameswon/gamesplayed * 100).toFixed(2)}%`
+			embed.addField(`Games played on ${x}+ loss streak:`, `Played ${gamesplayed}, Won ${gameswon}, Winrate: ${winr}`, false);
+		}
+		embed.addField(`Longest losing streak in a ranked queue:`, longeststreak, true);
+		sentmsg.edit(`Loss Streak Statistics for ${summonerName}.`);
+		sentmsg.edit(embed);
+
+	},
+	async duo(receivedMessage, matchhistory, accountid, sentmsg) {
+    	let teammates = {};
+    	for (let y=0; y < matchhistory.length; y++) {
+			teammates = analyzeMatch(matchhistory[y], teammates, accountid);
+		}
+		finalarr = finalanalysis(threshold, teammates, matchhistory, accountid);
+		//finalarr is [duos won, duos played, solos won, solos played, total played, duoers object]
+		let duowr = finalarr[0]/finalarr[1]*100;
+		let solowr = finalarr[2]/finalarr[3]*100;
+		let totalwon = finalarr[0] + finalarr[2];
+		let totalwr = totalwon/finalarr[4]*100;
+		let winrateArray = [duowr, solowr, totalwr];
+		//handle NaN% bug
+		for (let x=0; x<winrateArray.length; x++) {
+			winrateArray[x] = Number.isNaN(winrateArray[x]) ? `N/A` : `${parseFloat(winrateArray[x]).toFixed(2)}%`;
+		}
+		let color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+		const embed = createEmbed(summonerName, `Calculated Duo Information`);
+		embed.addFields(
+				{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + winrateArray[2]},
+				{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + winrateArray[0]},
+				{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + winrateArray[1]},
+				{ name: '\u200B', value: '\u200B' },
+			)
+		duoSorted = Object.keys(finalarr[5]).sort((a,b) => {
+			return finalarr[5][b][1] - finalarr[5][a][1];
+		})
+		if (duoSorted.length > 0) {
+			embed.addField('Duos (minimum 3 games played together):',"Win-Loss records for each of your duos.", false);
+		}
+		let maxInlines = 18;
+		duoSorted.forEach(key => {
+			if (maxInlines > 0) {
+				let inline = `${finalarr[5][key][0]}-${finalarr[5][key][1]-finalarr[5][key][0]}`;
+				embed.addField(key, inline, true);
+				maxInlines--;
+			}
+		});
+		if (duoSorted.length > 18) {
+			let lastline = "";
+			for (let x=18; x<duoSorted.length; x++) {
+				let duoArray = finalarr[5][duoSorted[x]];
+				lastline += `**${duoSorted[x]}:** ${duoArray[0]}-${duoArray[1]-duoArray[0]}\n`;
+			}
+			embed.addField('Other Duos:', lastline, false);
+		}
+		sentmsg.edit(`Duo Statistics for ${summonerName}.`);
+		sentmsg.edit(embed);
+	},
+	async lookupMsg(receivedMessage)
     {
         message = receivedMessage.content;
         summonerName = ``;
         //use regex to find the region and summoner name
-        let region = message.match(/(?<=!duo )[\w]+/i)
+        let region = message.match(/(?<=!duo |!duolosers )[\w]+/i);
         if (!region || region.length != 1) {
             receivedMessage.react(xmark);
             return false;
@@ -384,7 +528,7 @@ const onMessage =  {
             return false;
         }
         region = regionendpoint[region];
-        let reg = /(?<=!duo [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i
+        let reg = /(?<=!duo [\w]+ |!duolosers [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i;
         summonerName = message.match(reg)
         if (!summonerName || summonerName.length != 1) {
             receivedMessage.react(xmark);
@@ -411,7 +555,9 @@ const onMessage =  {
         	let accountid = ids[0];
         	let summonerid = ids[1];
         	solom = await getmatchhistory(soloduoqueue, region, accountid);
+        	solom = insertionSort(solom);
         	flexm = await getmatchhistory(flexqueue, region, accountid);
+        	flexm = insertionSort(flexm);
         	matchhistory = matchhistory.concat(solom);
         	matchhistory = matchhistory.concat(flexm);
         	if (matchhistory == null || matchhistory.length == 0) {
@@ -424,67 +570,21 @@ const onMessage =  {
         	//now api search the matches
         	for (let x=0; x < matchhistory.length; x++) {
         		await getMatchInfo(matchhistory[x], region);
-        		//progress bar every 50 matches (and a quick one at 10 to check for ratelimit)
-        		if (x%50 == 0 || x==10) {
+        		//progress bar every 100 matches (and a quick one at 10 to check for ratelimit)
+        		if (x%100 == 0 || x==10) {
         			message.edit(`Summoner found. Updating matches... (this might take a while)\n Progress: ${x}/${matchhistory.length}.`);
         		}
         	}
 
-        	let teammates = {};
-        	for (let y=0; y< matchhistory.length; y++) {
-				teammates = analyzeMatch(matchhistory[y], teammates, accountid);
-			}
-			finalarr = finalanalysis(threshold, teammates, matchhistory, accountid);
-			//finalarr is [duos won, duos played, solos won, solos played, total played, duoers object]
-			let duowr = finalarr[0]/finalarr[1]*100;
-			let solowr = finalarr[2]/finalarr[3]*100;
-			let totalwon = finalarr[0] + finalarr[2];
-			let totalwr = totalwon/finalarr[4]*100;
-			let winrateArray = [duowr, solowr, totalwr];
-			//handle NaN% bug
-			for (let x=0; x<winrateArray.length; x++) {
-				winrateArray[x] = Number.isNaN(winrateArray[x]) ? `N/A` : `${parseFloat(winrateArray[x]).toFixed(2)}%`;
-			}
-			let color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
-			const embed = new Discord.MessageEmbed()
-				.setColor(color)
-				.setTitle(summonerName)
-				.setAuthor('DuoBot', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true', 'https://discord.gg/zdAajBZ')
-				.setDescription('Calculated Duo Information')
-				.setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
-				.addFields(
-					{ name: 'All Ranked Games:', value: 'Played ' + finalarr[4] + ', Won ' + totalwon + ", Winrate: " + winrateArray[2]},
-					{ name: 'Games With a Duo:', value: 'Played ' + finalarr[1] + ', Won ' + finalarr[0] + ", Winrate: " + winrateArray[0]},
-					{ name: 'Games Without a Duo:', value: 'Played ' + finalarr[3] + ', Won ' + finalarr[2] + ", Winrate: " + winrateArray[1]},
-					{ name: '\u200B', value: '\u200B' },
-				)
-				.setTimestamp()
-				.setFooter('Contact me at APotS#8566 for questions or feedback', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true');
-			duoSorted = Object.keys(finalarr[5]).sort((a,b) => {
-				return finalarr[5][b][1] - finalarr[5][a][1];
-			})
-			if (duoSorted.length > 0) {
-				embed.addField('Duos (minimum 3 games played together):',"Win-Loss records for each of your duos.", false);
-			}
-			let maxInlines = 18;
-			duoSorted.forEach(key => {
-				if (maxInlines > 0) {
-					let inline = `${finalarr[5][key][0]}-${finalarr[5][key][1]-finalarr[5][key][0]}`;
-					embed.addField(key, inline, true);
-					maxInlines--;
-				}
-			});
-			if (duoSorted.length > 18) {
-				let lastline = "";
-				for (let x=18; x<duoSorted.length; x++) {
-					let duoArray = finalarr[5][duoSorted[x]];
-					lastline += `**${duoSorted[x]}:** ${duoArray[0]}-${duoArray[1]-duoArray[0]}\n`;
-				}
-				embed.addField('Other Duos:', lastline, false);
-			}
-			message.edit(`Duo Statistics for ${summonerName}.`);
-			message.edit(embed);
-			leaveQueue();
+        	//send the matches off to the correct analysis function
+        	if (receivedMessage.content.search(/^!duo /i) > -1) {
+        		onMessage.duo(receivedMessage, matchhistory, accountid, sentMessage);
+        	} else if (receivedMessage.content.search(/^!duolosers /i) > -1) {
+        		onMessage.losers(receivedMessage, matchhistory, accountid, sentMessage);
+        	} else {
+        		message.react(xmark);
+        	}
+        	leaveQueue();
         })
     },
     help(receivedMessage) {
