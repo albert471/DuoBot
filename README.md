@@ -4,6 +4,7 @@
      alt="Bot Profile Image">
 
 **DuoBot is a discord bot that allows users to see in-depth information regarding their ranked performance this season.**
+
 Specifically, it allows people to see their League of Legends winrate with and without a duo in addition to whether they have been affected by the so-called "loser's queue".
 
 [Click me to add the bot to your server](https://discord.com/api/oauth2/authorize?client_id=733813002188357682&permissions=76864&scope=bot)
