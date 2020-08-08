@@ -12,12 +12,14 @@ DuoBot is a discord bot that allows users to see their League of Legends winrate
 ## Features
 * Search a summoner from any region and pull data about their ranked games.
 * View which players you have duoed with the most along with your winrates with them
-* Check your overall winrate with and without a duo partner.
+* Calculate your overall winrate with and without a duo partner.
 * Analyze your winrate when on a loss-streak (1, 2, 3, and 4 game losing streaks).
+* Check your longest ranked losing streak in the current season.
 * Bot's status message indicates whether or not it is handling a different request (Riot limits the speed at which you can search matches).
 
 ## Commands
 * !duo region summonerName (For example, !duo na albert471) 
+
 * !duolosers region summonerName (!duolosers na albert471)
 
 * !duo help
