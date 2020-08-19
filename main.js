@@ -4,14 +4,18 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.3.3
+// * @version: 1.3.4
 //=====================================================================================
 
+//todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
+// fix max number of duos bug (currently just ccuts off before character limit)
+// for embeds: have it calculate how many large inlines it needs depending on # of duos
+// then remember the 6k char cap (set a var t o5k and have it update whenever you make it bigger)
 
 /** API related variables **/
 const api = ""; //Riot API key
 const disctoken = ``; //Discord Token
-const adminId = ``;
+const adminId = ``; 
 /** Libraries the bot requires **/
 const Discord = require(`discord.js`);
 const client = new Discord.Client();
@@ -355,8 +359,8 @@ function getChampFromId(id) {
     })[0];
 }
 
-async function reactToEmbed(sentmsg, type) {
-    if (type == `(Flex and Solo Queue)`) {
+async function reactToEmbed(sentmsg, type, noMatch) {
+    if (type == `(Flex and Solo Queue)` && !noMatch) {
         sentmsg.react(flexemoji);
         sentmsg.react(soloemoji);
     } else if (type == `(Solo Queue Only)`) {
@@ -466,7 +470,7 @@ const onMessageReactionAdd = {
                     await onMessage.matchHistoryAndAnalysis(accountid, matches[2], regionendpoint[matches[3]], message,theType, matches[1].toLowerCase());
                 })
                 .catch(err => {
-                    console.error("error in messagereactionadd");
+                    console.error(err);
                 });
             } else if (!(checkType == trashemoji)) {
                 console.error("error in changetype: unknown emote rxn");
@@ -704,11 +708,6 @@ const onMessage =  {
         if (type == `(Flex and Solo Queue)` || type == `(Flex Queue Only)`) {
             let flexm = await getmatchhistory(flexqueue, region, accountid);
             matchhistory = matchhistory.concat(flexm);
-        }
-        if (matchhistory == null || matchhistory.length == 0) {
-            message.edit(`No matches found.`);
-            leaveQueue();
-            return;
         }
         //now api search the matches
         for (let x=0; x < matchhistory.length; x++) {
