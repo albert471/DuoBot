@@ -17,12 +17,17 @@ Specifically, it allows people to see their League of Legends winrate with and w
 * Calculate your overall winrate with and without a duo partner.
 * Analyze your winrate when on a loss-streak (1, 2, 3, and 4 game losing streaks).
 * Check your longest ranked losing streak in the current season.
+* View your winrate at different game length intervals (sub20, 20-25, 25-30, 30-35, 35-40, over 40)
+* Shows your winrate on blue/red side
+* Calculates your shortest and longest ranked games.
 * Bot's status message indicates whether or not it is handling a different request (Riot limits the speed at which you can search matches).
 
 ## Commands
 * !duo region summonerName (For example, !duo na albert471) 
 
 * !duolosers region summonerName (!duolosers na albert471)
+
+* !duolength region summonerName (!duolength na albert471)
 
 * !duo help
 
