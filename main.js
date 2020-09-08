@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.3.4
+// * @version: 1.4.6
 //=====================================================================================
 
 //todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
@@ -15,7 +15,7 @@
 /** API related variables **/
 const api = ""; //Riot API key
 const disctoken = ``; //Discord Token
-const adminId = ``; 
+const adminId = ``; //User Id of the person with access to !duo guild stats
 /** Libraries the bot requires **/
 const Discord = require(`discord.js`);
 const client = new Discord.Client();
@@ -23,7 +23,6 @@ client.login(disctoken);
 const fs = require(`fs`);
 const TeemoJS = require('teemojs');
 let tApi = TeemoJS(api);
-
 
 /** League API-specific global variables **/
 const seasonsstartepoch = 1578488400000; //start of season 10
@@ -52,7 +51,6 @@ const bothemoji = `744349716967325787`;
 const trashemoji = `744349998287814849`;
 
 //converts human readable regions to ones the bot uses 
-//check to make sure LAS vs LAN are la1 or la2
 const regionendpoint = {
     "na": "na1",
     "euw": "euw1",
@@ -79,7 +77,6 @@ const regionReverse = {
     "ru": "ru"
 };
 
-/* -------------------------------------*/
 //reads champion file to the champjson object
 async function loadChamps() {
     let data = fs.readFileSync(`champions.txt`);
@@ -90,12 +87,14 @@ async function loadChamps() {
     }
 }
 
-/* ---------------------------------------*/
-
 /** retrieves the cached game file and loads it as the object matchcache **/
 async function getCache(summid) {
     let path = `./matches/${summid}.txt`;
+    let dirPath = `./matches/`;
     try {
+        if (!(fs.existsSync(dirPath))) {
+            fs.mkdirSync(dirPath);
+        }
         if (fs.existsSync(path)) {
             let retrievematchcache = await fs.readFileSync(path);
             if (retrievematchcache.toString(`utf8`) == ``) {
@@ -175,7 +174,7 @@ async function getMatchInfo(matchid, region, matchcache, summoner) {
 }
 
 /** calculates teammates and adds them to the teammates object. **/
-function analyzeMatch(matchid, teammates, accountid, matchcache) {
+function getTeammates(matchid, teammates, accountid, matchcache) {
     if (!matchcache[matchid]) {
         return teammates;
     }
@@ -186,12 +185,24 @@ function analyzeMatch(matchid, teammates, accountid, matchcache) {
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
         return p.player.accountId == accountid;
-    }).participantId;
+    })
+    if (foundId) {
+        foundId = foundId.participantId;
+    } else {
+        console.error("error in getTeammates");
+        return;
+    }
     //find team of summoner
     const part = matchcache[matchid].participants;
     let teamId = part.find(pl => {
         return pl.participantId == foundId;
-    }).teamId;
+    })
+    if (teamId) {
+        teamId = teamId.teamId;
+    } else {
+        console.error("error in getTeammates");
+        return;
+    }
     //find teammates; pull partId using teammates[posn]['participantId']
     let teammatesarr = [];
     for (let y=0; y<part.length; y++) {
@@ -231,14 +242,29 @@ function getWinOrLoss(matchid, accountid, matchcache) {
     }).stats.win;
 }
 
+/** returns true if the searched summoner was on blue team in MATCHID.  function errors if they didnt play */
+function getBlueOrRed(matchid, accountid, matchcache) {
+    if (!(matchid in matchcache)) return;
+    // get participantid of searched player
+    const partId = matchcache[matchid].participantIdentities;
+    let foundId = partId.find(p => {
+        return p.player.accountId == accountid;
+    }).participantId;
+    // get participant from participantid
+    const part = matchcache[matchid].participants;
+    return part.find(pl => {
+        return pl.participantId == foundId;
+    }).teamId === 100 ? true : false;
+}
+
 /** returns true if the two matches have the same queue.  soft errors if it doesn't exist */
 function compareQueues(matchid1, matchid2, matchcache) {
-      if (matchid1 in matchcache && matchid2 in matchcache) {
-    let queue1 = matchcache[matchid1].queueId;
-    let queue2 = matchcache[matchid2].queueId;
-      return queue1 == queue2; 
+    if (matchid1 in matchcache && matchid2 in matchcache) {
+        let queue1 = matchcache[matchid1].queueId;
+        let queue2 = matchcache[matchid2].queueId;
+        return queue1 == queue2; 
     }
-      return false;
+    return false;
 }
 
 /** takes all duo games from the duo object, adds them all to duomatchhistory.  calculates % wr of
@@ -247,8 +273,8 @@ threshold: integer number of games a teammate appears before they are a duo (def
 returns [duos won, duos played, solos won, solos played, total played, duoers object]**/
 function finalanalysis(threshold, teammates, matchhistory, accountid, matchcache) {
     //match ids with a duo
-    let duogames = [];
-    let duogameswon = 0;
+    let duogames = [],
+        duogameswon = 0;
     const allplayers = Object.keys(teammates);
     //summoner names of duos
     let duoers = {};
@@ -275,9 +301,8 @@ function finalanalysis(threshold, teammates, matchhistory, accountid, matchcache
         return matchcache[m].gameDuration > 300;
     });
     matchhistory = matchtemp;
-
-    let sologames = [];
-    let sologameswon = 0;
+    let sologames = [],
+        sologameswon = 0;
     //get sologames by finding games not in duo cache
     for (let z=0; z<matchhistory.length; z++) {
         if (!duogamesUnique.includes(matchhistory[z])) {
@@ -298,11 +323,9 @@ function finalanalysis(threshold, teammates, matchhistory, accountid, matchcache
         }
         duoers[key] = [counter, duoers[key].length];
     });
-
-    let totalgamesplayed = matchhistory.length;
-    let duogamesplayed = duogamesUnique.length;
-    let sologamesplayed = sologames.length;
-    totalgamesplayed = sologamesplayed + duogamesplayed;
+    let duogamesplayed = duogamesUnique.length,
+        sologamesplayed = sologames.length;
+    let totalgamesplayed = sologamesplayed + duogamesplayed;
     return [duogameswon, duogamesplayed, sologameswon, sologamesplayed, totalgamesplayed, duoers];
 }
 
@@ -342,14 +365,14 @@ function insertionSort(array, matchcache) {
 function createEmbed(title, description) {
     let color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
     const embed = new Discord.MessageEmbed()
-        .setColor(color)
-        .setTitle(title)
-        .setDescription(description)
-        .setAuthor('DuoBot', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true', 'https://discord.gg/zdAajBZ')
-        .setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
-        .setTimestamp()
-        .setFooter('Contact me at APotS#8566 for questions or feedback', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true');
-        return embed;
+    .setColor(color)
+    .setTitle(title)
+    .setDescription(description)
+    .setAuthor('DuoBot', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true', 'https://discord.gg/zdAajBZ')
+    .setThumbnail('https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true')
+    .setTimestamp()
+    .setFooter('Contact me at APotS#8566 for questions or feedback', 'https://github.com/albert471/DuoBot/blob/master/Images/duo.jpg?raw=true');
+    return embed;
 
 }
 /** returns the name of the champ with the given ID **/
@@ -428,6 +451,29 @@ client.on(`guildMemberAdd`, (member) =>
 /** fns for when a reaction is added */
 const onMessageReactionAdd = {
     async changeType(reaction) {
+        if (reaction.message.deleted) {
+            return;
+        }
+        const reactionMngr = reaction.message.reactions.cache;
+        let reactcountarr = [];
+        let flexreactcount = reactionMngr.get(flexemoji);
+        reactcountarr.push(flexreactcount);
+        let soloreactcount = reactionMngr.get(soloemoji);
+        reactcountarr.push(soloreactcount);
+        let bothreactcount = reactionMngr.get(bothemoji);
+        reactcountarr.push(bothreactcount);
+        let trashreactcount = reactionMngr.get(trashemoji);
+        reactcountarr.push(trashreactcount);
+        let totalreactionsum = 0;
+        let totalmissing = 0;
+        for (let k of reactcountarr) {
+            if (k && k.count > 1) {
+                totalreactionsum++;
+            }
+        } 
+        if (totalreactionsum != 1) {
+            return;
+        }
         let booleanbotreacted = reaction.me;
         let reactedCount = reaction.count;
         if (booleanbotreacted && reactedCount > 1) {
@@ -438,9 +484,10 @@ const onMessageReactionAdd = {
             let matches = embTitle.match(reg); //takes form [analysistype, summoner, region]
             if (!matches || matches.length != 4) {
                 console.error("error at messagereactionadd");
+                return;
             } 
             let chn = reaction.message.channel;
-            await reaction.message.delete();
+            await reaction.message.delete().catch((err) => { console.error(err); });
             if (checkType == flexemoji || checkType == soloemoji || checkType == bothemoji) {
                 chn.send(`Searching again for ${matches[2]} on the ${matches[3]} server...`)
                 .then(async (message) => {
@@ -466,19 +513,21 @@ const onMessageReactionAdd = {
                             break;
                         default:
                             console.error("error in changetype switch command");
+                            return;
                     }
                     await onMessage.matchHistoryAndAnalysis(accountid, matches[2], regionendpoint[matches[3]], message,theType, matches[1].toLowerCase());
                 })
                 .catch(err => {
                     console.error(err);
+                    return;
                 });
             } else if (!(checkType == trashemoji)) {
                 console.error("error in changetype: unknown emote rxn");
+                return;
             }
         }
     }
-}
-
+};
 /** Functions to be performed when the bot is turned on **/
 const onReady = 
 {
@@ -522,7 +571,7 @@ const onJoin = {
             console.log('could not find gen chat');
         }
     }
-}
+};
 const onMessage =  {
     async losers(matchhistory, accountid, sentmsg, summonerName, region, matchcache, type) {
         let totalstreakarray = [];
@@ -579,16 +628,129 @@ const onMessage =  {
         }
         embed.addField(`Longest losing streak in a ranked queue:`, longeststreak, true);
         await sentmsg.edit(`Loss Streak Statistics for ${summonerName}.`);
-        await sentmsg.suppressEmbeds(false);
-        await sentmsg.edit(embed);
-        await reactToEmbed(sentmsg, type);
+        sentmsg.edit(embed);
+        reactToEmbed(sentmsg, type);
 
+    },
+    async length(matchhistory, accountid, sentmsg, summonerName, region, matchcache, type) {
+        let sub20Data = {}, 
+            sub25Data = {},
+            sub30Data = {},
+            sub35Data = {},
+            sub40Data = {},
+            over40Data = {},
+            longestgamelength = [0,0],
+            shortestgamelength = [0,0],
+            shortestwinorloss = ``,
+            longestwinorloss = ``,
+            blueCount = 0,
+            blueWins = 0,
+            redCount = 0,
+            redWins = 0;
+        let allLengthData = [sub20Data, sub25Data, sub30Data, sub35Data, sub40Data, over40Data];
+        for (let x=0; x < allLengthData.length; x++) {
+            allLengthData[x]["count"] = 0;
+            allLengthData[x]["won"] = 0;
+        }
+        for (let x=0; x < matchhistory.length; x++) {
+            const duration = matchcache[matchhistory[x]].gameDuration;
+            if (duration <= 300) {
+                continue;
+            } else {
+                //blue red winrates
+                let blueOrRed = getBlueOrRed(matchhistory[x], accountid, matchcache);
+                if (blueOrRed == true) {
+                    blueCount++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        blueWins++;
+                    }
+                } else if (blueOrRed == false) {
+                    redCount++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        redWins++;
+                    }
+                } else {
+                    console.error("error in async length");
+                    return;
+                }
+                //duration winrates
+                if (duration < 20*60) {
+                    allLengthData[0]["count"]++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        allLengthData[0]["won"]++;
+                    }
+                } else if (duration < 25*60) {
+                    allLengthData[1]["count"]++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        allLengthData[1]["won"]++;
+                    }
+                } else if (duration < 30*60) {
+                    allLengthData[2]["count"]++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        allLengthData[2]["won"]++;
+                    }
+                } else if (duration < 35*60) {
+                    allLengthData[3]["count"]++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        allLengthData[3]["won"]++;
+                    }
+                } else if (duration < 40*60) {
+                    allLengthData[4]["count"]++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        allLengthData[4]["won"]++;
+                    }
+                } else if (duration >= 40*60) {
+                    allLengthData[5]["count"]++;
+                    if (getWinOrLoss(matchhistory[x], accountid, matchcache)) {
+                        allLengthData[5]["won"]++;
+                    }
+                } else {
+                    console.error("error in async length");
+                    return;
+                }
+            }
+            if (duration > longestgamelength[0]) {
+                longestgamelength[0] = duration;
+                longestgamelength[1] = matchhistory[x];
+            }
+            if (duration < shortestgamelength[0] || shortestgamelength[0] === 0) {
+                shortestgamelength[0] = duration;
+                shortestgamelength[1] = matchhistory[x];
+            }
+        }
+        for (let x=0; x < allLengthData.length; x++) {
+                allLengthData[x]["winrate"] = `${parseFloat(allLengthData[x]["won"]/(allLengthData[x]["count"] || 1)*100).toFixed(2)}%`;
+        }
+        shortestwinorloss = getWinOrLoss(shortestgamelength[1], accountid, matchcache) == true ? `won` : `lost`;
+        longestwinorloss = getWinOrLoss(longestgamelength[1], accountid, matchcache) == true ? `won` : `lost`;
+        let longestGameDisplay = `${parseInt(longestgamelength[0] /  60)}:`;
+        longestGameDisplay += `${longestgamelength[0] % 60}`.padStart(2,"0");
+        let shortestGameDisplay = `${parseInt(shortestgamelength[0] / 60)}:`;
+        shortestGameDisplay += `${shortestgamelength[0] % 60}`.padStart(2,"0");
+        let blueWinrate = `${parseFloat(blueWins/(blueCount || 1)*100).toFixed(2)}%`;
+        let redWinrate = `${parseFloat(redWins/(redCount || 1)*100).toFixed(2)}%`;
+        const embed = createEmbed(`Duolength statistics for ${summonerName} on the ${regionReverse[region]} server`,`Calculated Game Length Information ${type}`);
+        embed.addFields(
+                { name: 'Games under 20 Minutes', value: 'Played ' + allLengthData[0]["count"] + ', Won ' + allLengthData[0]["won"] + ", Winrate: " + allLengthData[0]["winrate"]},
+                { name: 'Games between 20-25 Minutes', value: 'Played ' + allLengthData[1]["count"] + ', Won ' + allLengthData[1]["won"] + ", Winrate: " + allLengthData[1]["winrate"]},
+                { name: 'Games between 25-30 Minutes', value: 'Played ' + allLengthData[2]["count"] + ', Won ' + allLengthData[2]["won"] + ", Winrate: " + allLengthData[2]["winrate"]},
+                { name: 'Games between 30-35 Minutes', value: 'Played ' + allLengthData[3]["count"] + ', Won ' + allLengthData[3]["won"] + ", Winrate: " + allLengthData[3]["winrate"]},
+                { name: 'Games between 35-40 Minutes', value: 'Played ' + allLengthData[4]["count"] + ', Won ' + allLengthData[4]["won"] + ", Winrate: " + allLengthData[4]["winrate"]},
+                { name: 'Games over 40 Minutes', value: 'Played ' + allLengthData[5]["count"] + ', Won ' + allLengthData[5]["won"] + ", Winrate: " + allLengthData[5]["winrate"]},
+                { name: 'Games played on blue side', value: 'Played ' + blueCount + ', Won ' + blueWins + ", Winrate: " + blueWinrate},
+                { name: 'Games played on red side', value: 'Played ' + redCount + ', Won ' + redWins + ", Winrate: " + redWinrate}
+            );
+        embed.addField(`Longest game length`, `${longestGameDisplay} (${longestwinorloss})`, true);
+        embed.addField(`Shortest game length`, `${shortestGameDisplay} (${shortestwinorloss})`, true);
+        await sentmsg.edit(`Game Length Statistics for ${summonerName}.`);
+        sentmsg.edit(embed);
+        reactToEmbed(sentmsg, type);
     },
     async duo(matchhistory, accountid, sentmsg, summonerName, region, matchcache, type) {
         if (type == undefined) type = `(Flex and Solo Queue)`;
         let teammates = {};
         for (let y=0; y < matchhistory.length; y++) {
-            teammates = analyzeMatch(matchhistory[y], teammates, accountid, matchcache);
+            teammates = getTeammates(matchhistory[y], teammates, accountid, matchcache);
         }
         let finalarr = finalanalysis(threshold, teammates, matchhistory, accountid, matchcache);
         //finalarr is [duos won, duos played, solos won, solos played, total played, duoers object]
@@ -635,16 +797,15 @@ const onMessage =  {
             embed.addField('Other Duos:', lastline, false);
         }
         await sentmsg.edit(`Duo Statistics for ${summonerName}.`);
-        await sentmsg.suppressEmbeds(false);
-        await sentmsg.edit(embed);
-        await reactToEmbed(sentmsg, type);
+        sentmsg.edit(embed);
+        reactToEmbed(sentmsg, type);
     },
     async lookupMsg(receivedMessage)
     {
         let message = receivedMessage.content;
         let summonerName = ``;
         //use regex to find the region and summoner name
-        let region = message.match(/(?<=!duo |!duolosers )[\w]+/i);
+        let region = message.match(/(?<=!duo |!duolosers |!duolength )[\w]+/i);
         if (!region || region.length != 1) {
             receivedMessage.react(xmark);
             return false;
@@ -658,7 +819,7 @@ const onMessage =  {
             return false;
         }
         region = regionendpoint[region];
-        let reg = /(?<=!duo [\w]+ |!duolosers [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i;
+        let reg = /(?<=!duo [\w]+ |!duolosers [\w]+ |!duolength [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i;
         summonerName = message.match(reg);
         if (!summonerName || summonerName.length != 1) {
             receivedMessage.react(xmark);
@@ -680,14 +841,16 @@ const onMessage =  {
                 leaveQueue();
                 return;
             }
-            let accountid = ids[0];
-            let summonerid = ids[1];
+            let accountid = ids[0],
+                summonerid = ids[1];
             message.edit(`Summoner found. Updating matches... (this might take a while)`);
             let analysisType;
             if (receivedMessage.content.search(/^!duo /i) > -1) {
                 analysisType = "duo";
             } else if (receivedMessage.content.search(/^!duolosers /i) > -1) {
                 analysisType = "duolosers";
+            } else if (receivedMessage.content.search(/^!duolength /i) > -1) {
+                analysisType = "duolength";
             } else {
                 console.error("error in lookupmsg");
             }
@@ -707,6 +870,7 @@ const onMessage =  {
         }
         if (type == `(Flex and Solo Queue)` || type == `(Flex Queue Only)`) {
             let flexm = await getmatchhistory(flexqueue, region, accountid);
+            flexm = insertionSort(flexm, matchcache);
             matchhistory = matchhistory.concat(flexm);
         }
         //now api search the matches
@@ -723,6 +887,8 @@ const onMessage =  {
             onMessage.duo(matchhistory, accountid, message, summonerName, region, matchcache, type);
         } else if (analysisType == "duolosers") {
             onMessage.losers(matchhistory, accountid, message, summonerName, region, matchcache, type);
+        } else if (analysisType == "duolength") {
+            onMessage.length(matchhistory, accountid, message, summonerName, region, matchcache, type);
         } else {
             console.error("error in matchhistoryandanalysis");
         }
@@ -732,6 +898,7 @@ const onMessage =  {
         let replyMessage = `Hi, I'm DuoBot.  If you would like to search your summoner, please use the following commands: \n`;
         replyMessage += `Duo Winrate: !duo [region] [summoner]  (as an example: !duo na albert471)\n`;
         replyMessage += `Loss Statistics: !duolosers [region] [summoner]  (as an example: !duolosers na albert471)\n`;
+        replyMessage += `Length Statistics: !duolength [region] [summoner]  (as an example: !duolength na albert471)\n`;
         replyMessage += `Have questions, feedback, or a bug to report? Message me at APotS#8566 or join <https://discord.gg/zdAajBZ>.`;
         receivedMessage.channel.send(replyMessage);
     },
@@ -739,7 +906,7 @@ const onMessage =  {
         if (receivedMessage.content == `!duo guild stats`) {
             let replyMessage = `guilds and owners:\n`;
             let ownerObject = {};
-            client.guilds.cache.each((guild, id) => {
+            client.guilds.cache.each((guild) => {
                 if (replyMessage.length <= 1900) {
                     let text = ``;
                     if (guild.owner) {
