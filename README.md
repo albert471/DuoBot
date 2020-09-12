@@ -9,7 +9,7 @@ Specifically, it allows people to see their League of Legends winrate with and w
 
 [Click me to add the bot to your server](https://discord.com/api/oauth2/authorize?client_id=733813002188357682&permissions=76864&scope=bot)
 
-[Support Discord](https://discord.gg/zdAajBZ)
+[Support Discord Server for Questions, Feedback, and Bug Reports](https://discord.gg/zdAajBZ)
 
 ## Features
 * Search a summoner from any region and pull data about their ranked games.
