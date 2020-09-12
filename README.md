@@ -14,6 +14,7 @@ Specifically, it allows people to see their League of Legends winrate with and w
 ## Features
 * Search a summoner from any region and pull data about their ranked games.
 * View which players you have duoed with the most along with your winrates with them
+* Compare stats in your solo/duo games, flex games, or both
 * Calculate your overall winrate with and without a duo partner.
 * Analyze your winrate when on a loss-streak (1, 2, 3, and 4 game losing streaks).
 * Check your longest ranked losing streak in the current season.
