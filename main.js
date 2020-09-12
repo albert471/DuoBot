@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.4.6
+// * @version: 1.5.2
 //=====================================================================================
 
 //todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
@@ -15,7 +15,7 @@
 /** API related variables **/
 const api = ""; //Riot API key
 const disctoken = ``; //Discord Token
-const adminId = ``; //User Id of the person with access to !duo guild stats
+const adminId = `195767603476692992`; //User Id of the person with access to !duo guild stats
 /** Libraries the bot requires **/
 const Discord = require(`discord.js`);
 const client = new Discord.Client();
@@ -184,12 +184,12 @@ function getTeammates(matchid, teammates, accountid, matchcache) {
     //find participantid of analyzed player by matching accountId
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
-        return p.player.accountId == accountid;
+        return p.player.accountId == accountid || accountid == p.player.currentAccountId;
     })
     if (foundId) {
         foundId = foundId.participantId;
     } else {
-        console.error("error in getTeammates");
+        console.error(`error in getTeammates: m.id = ${matchid}, accountid: ${accountid}`);
         return;
     }
     //find team of summoner
@@ -200,7 +200,7 @@ function getTeammates(matchid, teammates, accountid, matchcache) {
     if (teamId) {
         teamId = teamId.teamId;
     } else {
-        console.error("error in getTeammates");
+        console.error(`error in getTeammates: m.id = ${matchid}, accountid: ${accountid}`);
         return;
     }
     //find teammates; pull partId using teammates[posn]['participantId']
@@ -214,7 +214,7 @@ function getTeammates(matchid, teammates, accountid, matchcache) {
     for (let x=0; x < teammatesarr.length; x++) {
         let teammatepid = teammatesarr[x];
         let teammate = partId.find(pl => {
-            return pl.participantId == teammatepid && pl.player.accountId != accountid;
+            return pl.participantId == teammatepid && pl.player.accountId != accountid && pl.player.currentAccountId != accountid;
         });
         if (teammate) {
             teammate = teammate.player;
@@ -233,8 +233,14 @@ function getWinOrLoss(matchid, accountid, matchcache) {
     // get participantid of searched player
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
-        return p.player.accountId == accountid;
-    }).participantId;
+        return p.player.accountId == accountid || accountid == p.player.currentAccountId;
+    })
+    if (foundId) {
+        foundId = foundId.participantId;
+    } else {
+        console.error(`error in getwinorloss: m.id = ${matchid}, accountid: ${accountid}`);
+        return false;
+    }
     // get participant from participantid
     const part = matchcache[matchid].participants;
     return part.find(pl => {
@@ -248,8 +254,14 @@ function getBlueOrRed(matchid, accountid, matchcache) {
     // get participantid of searched player
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
-        return p.player.accountId == accountid;
-    }).participantId;
+        return p.player.accountId == accountid || accountid == p.player.currentAccountId;
+    })
+    if (foundId) {
+        foundId = foundId.participantId;
+    } else {
+        console.error(`error in getblueorred: m.id = ${matchid}, accountid: ${accountid}`);
+        return;
+    }
     // get participant from participantid
     const part = matchcache[matchid].participants;
     return part.find(pl => {
@@ -332,7 +344,7 @@ function finalanalysis(threshold, teammates, matchhistory, accountid, matchcache
 /** Returns a timestamp for the given epoch **/
 function getTimeStamp(time)
 {
-    let today = new Date(time);
+    let today = new Date();
     let date = `${(today.getMonth() + 1)}-${today.getDate()}`;
     //make it proper military time
     let theHour = today.getHours();
@@ -481,7 +493,7 @@ const onMessageReactionAdd = {
             //need some if statements to get type from this
             let embTitle = reaction.message.embeds[0].title;
             let reg = /^(Duo[\w]{0,10}) statistics for (.{3,16}) on the ([\w\d]{2,4}) server$/i;
-            let matches = embTitle.match(reg); //takes form [analysistype, summoner, region]
+            let matches = embTitle.match(reg); //takes form [analysisType, summoner, region]
             if (!matches || matches.length != 4) {
                 console.error("error at messagereactionadd");
                 return;
@@ -512,7 +524,8 @@ const onMessageReactionAdd = {
                             theType = `(Flex and Solo Queue)`;
                             break;
                         default:
-                            console.error("error in changetype switch command");
+                            console.error(`error in changetype switch command :checkType = ${checkType}`);
+                            leaveQueue();
                             return;
                     }
                     await onMessage.matchHistoryAndAnalysis(accountid, matches[2], regionendpoint[matches[3]], message,theType, matches[1].toLowerCase());
@@ -522,7 +535,7 @@ const onMessageReactionAdd = {
                     return;
                 });
             } else if (!(checkType == trashemoji)) {
-                console.error("error in changetype: unknown emote rxn");
+                console.error(`error in changetype: unknown emote rxn: checkType ${checkType}`);
                 return;
             }
         }
@@ -670,7 +683,7 @@ const onMessage =  {
                         redWins++;
                     }
                 } else {
-                    console.error("error in async length");
+                    console.error(`error in async length: blueOrRed: ${blueOrRed}`);
                     return;
                 }
                 //duration winrates
@@ -705,7 +718,7 @@ const onMessage =  {
                         allLengthData[5]["won"]++;
                     }
                 } else {
-                    console.error("error in async length");
+                    console.error(`error in async length: duration = ${duration}`);
                     return;
                 }
             }
@@ -852,8 +865,13 @@ const onMessage =  {
             } else if (receivedMessage.content.search(/^!duolength /i) > -1) {
                 analysisType = "duolength";
             } else {
-                console.error("error in lookupmsg");
+                console.error(`error in lookupmsg: query: ${receivedMessage.content}`);
+                return;
             }
+            const senderTag = receivedMessage.author.tag;
+            const time = getTimeStamp();
+            const query = receivedMessage.content;
+            saveToLog(`${time}: ${senderTag}: ${query}\n`);
             await onMessage.matchHistoryAndAnalysis(accountid, summonerName, region, message, `(Flex and Solo Queue)`, analysisType);
             
         });
@@ -890,7 +908,7 @@ const onMessage =  {
         } else if (analysisType == "duolength") {
             onMessage.length(matchhistory, accountid, message, summonerName, region, matchcache, type);
         } else {
-            console.error("error in matchhistoryandanalysis");
+            console.error(`error in matchhistoryandanalysis: analysisType = ${analysisType}`);
         }
         leaveQueue();
     },
@@ -946,4 +964,10 @@ function joinQueue() {
     if (queue == 1) {
         onReady.setPresence(true);
     }
+}
+
+async function saveToLog(info) {
+    fs.appendFile("log.txt", info, function (err) {
+    if (err) throw err;
+    });
 }
