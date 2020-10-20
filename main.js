@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.5.3
+// * @version: 1.5.4
 //=====================================================================================
 
 //todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
@@ -15,7 +15,7 @@
 /** API related variables **/
 const api = ""; //Riot API key
 const disctoken = ``; //Discord Token
-const adminId = `195767603476692992`; //User Id of the person with access to !duo guild stats
+const adminId = ``; //User Id of the person with access to !duo guild stats
 /** Libraries the bot requires **/
 const Discord = require(`discord.js`);
 const client = new Discord.Client();
@@ -160,18 +160,24 @@ async function getmatchhistory(queue,region, accountid) {
     return matchhistory;
 }
 
-/** saves all info about the match with MATCHID to the matchcache if it isn't there already **/
-async function getMatchInfo(matchid, region, matchcache, summoner) {
+/** saves all info about all match in MATCHHISTORY to the matchcache if it isn't there already **/
+async function getMatchInfo(matchhistory, region, matchcache, summoner) {
     
-    if (matchid in matchcache) {
-        return matchcache[matchid];
+    let helperarr = [];
+    for (let matchid of matchhistory) {
+        if (matchid in matchcache) { 
+            helperarr.push(matchcache[matchid]);
+        } else {
+            helperarr.push(tApi.get(region, 'match.getMatch', matchid));
+        }
     }
-    await tApi.get(region, 'match.getMatch', matchid)
-        .then(async data => {
-            matchcache[matchid] = data;
-            await saveFile(JSON.stringify(matchcache), summoner);
-        });
+    let values = await Promise.all(helperarr);
+    for (let i = 0; i < values.length; i++) {
+        matchcache[matchhistory[i]] = values[i];
+    }
+    await saveFile(JSON.stringify(matchcache), summoner);
 }
+
 
 /** calculates teammates and adds them to the teammates object. **/
 function getTeammates(matchid, teammates, accountid, matchcache) {
@@ -185,7 +191,7 @@ function getTeammates(matchid, teammates, accountid, matchcache) {
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
         return p.player.accountId == accountid || accountid == p.player.currentAccountId;
-    })
+    });
     if (foundId) {
         foundId = foundId.participantId;
     } else {
@@ -196,7 +202,7 @@ function getTeammates(matchid, teammates, accountid, matchcache) {
     const part = matchcache[matchid].participants;
     let teamId = part.find(pl => {
         return pl.participantId == foundId;
-    })
+    });
     if (teamId) {
         teamId = teamId.teamId;
     } else {
@@ -234,7 +240,7 @@ function getWinOrLoss(matchid, accountid, matchcache) {
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
         return p.player.accountId == accountid || accountid == p.player.currentAccountId;
-    })
+    });
     if (foundId) {
         foundId = foundId.participantId;
     } else {
@@ -255,7 +261,7 @@ function getBlueOrRed(matchid, accountid, matchcache) {
     const partId = matchcache[matchid].participantIdentities;
     let foundId = partId.find(p => {
         return p.player.accountId == accountid || accountid == p.player.currentAccountId;
-    })
+    });
     if (foundId) {
         foundId = foundId.participantId;
     } else {
@@ -396,16 +402,20 @@ function getChampFromId(id) {
 
 async function reactToEmbed(sentmsg, type, noMatch) {
     if (type == `(Flex and Solo Queue)` && !noMatch) {
-        sentmsg.react(flexemoji);
-        sentmsg.react(soloemoji);
+        let er = "flexandsoloq";
+        reactToMessage(sentmsg, flexemoji, er);
+        reactToMessage(sentmsg, soloemoji, er);
     } else if (type == `(Solo Queue Only)`) {
-        sentmsg.react(flexemoji);
-        sentmsg.react(bothemoji);
+        let er = "soloqonly";
+        reactToMessage(sentmsg, flexemoji, er);
+        reactToMessage(sentmsg, bothemoji, er);
     } else if (type == `(Flex Queue Only)`) {
-        sentmsg.react(soloemoji);
-        sentmsg.react(bothemoji);
+        let er = "flexqonly";
+        reactToMessage(sentmsg, soloemoji, er);
+        reactToMessage(sentmsg, bothemoji, er);
     }
-    sentmsg.react(trashemoji);
+    let er = "trash";
+    reactToMessage(sentmsg, trashemoji, er);
 }
 /**               Client ready listener
     performs these commands when bot is turned on    **/
@@ -477,7 +487,6 @@ const onMessageReactionAdd = {
         let trashreactcount = reactionMngr.get(trashemoji);
         reactcountarr.push(trashreactcount);
         let totalreactionsum = 0;
-        let totalmissing = 0;
         for (let k of reactcountarr) {
             if (k && k.count > 1) {
                 totalreactionsum++;
@@ -506,7 +515,8 @@ const onMessageReactionAdd = {
                     joinQueue();
                     let ids = await getID(matches[2], regionendpoint[matches[3]]);
                     if (ids.length != 2) {
-                        message.edit(`Error finding this summoner and region combination.`);
+                        let er = "inonrxnadd ids.length != 2";
+                        editMessage(message, `Error finding this summoner and region combination.`, er);
                         leaveQueue();
                         return;
                     }
@@ -579,7 +589,7 @@ const onJoin = {
         replyMessage += `If the bot is down or something is urgent, please ping the dev. Enjoy your stay!`;
         const gen = member.guild.channels.cache.get(duogeneral);
         if (gen) {
-            gen.send(replyMessage);
+            sendMessage(gen, replyMessage);
         } else {
             console.log('could not find gen chat');
         }
@@ -640,8 +650,8 @@ const onMessage =  {
             embed.addField(`Games played on ${x}+ loss streak:`, `Played ${gamesplayed}, Won ${gameswon}, Winrate: ${winr}`, false);
         }
         embed.addField(`Longest losing streak in a ranked queue:`, longeststreak, true);
-        await sentmsg.edit(`Loss Streak Statistics for ${summonerName}.`);
-        sentmsg.edit(embed);
+        await editMessage(sentmsg, `Loss Streak Statistics for ${summonerName}.`, "print loss streak stats");
+        await editMessage(sentmsg, embed, `send embed lossstreak`);
         reactToEmbed(sentmsg, type);
 
     },
@@ -755,8 +765,9 @@ const onMessage =  {
             );
         embed.addField(`Longest game length`, `${longestGameDisplay} (${longestwinorloss})`, true);
         embed.addField(`Shortest game length`, `${shortestGameDisplay} (${shortestwinorloss})`, true);
-        await sentmsg.edit(`Game Length Statistics for ${summonerName}.`);
-        sentmsg.edit(embed);
+        let er = "in func length";
+        await editMessage(sentmsg, `Game Length Statistics for ${summonerName}.`, er);
+        await editMessage(sentmsg, embed, er);
         reactToEmbed(sentmsg, type);
     },
     async duo(matchhistory, accountid, sentmsg, summonerName, region, matchcache, type) {
@@ -809,8 +820,9 @@ const onMessage =  {
             }
             embed.addField('Other Duos:', lastline, false);
         }
-        await sentmsg.edit(`Duo Statistics for ${summonerName}.`);
-        sentmsg.edit(embed);
+        let er = "infunct duo";
+        await editMessage(sentmsg, `Duo Statistics for ${summonerName}.`, er);
+        await editMessage(sentmsg, embed, er);
         reactToEmbed(sentmsg, type);
     },
     async lookupMsg(receivedMessage)
@@ -820,7 +832,7 @@ const onMessage =  {
         //use regex to find the region and summoner name
         let region = message.match(/(?<=!duo |!duolosers |!duolength )[\w]+/i);
         if (!region || region.length != 1) {
-            receivedMessage.react(xmark);
+            reactToMessage(receivedMessage, xmark);
             return false;
         }
         region = region[0].toLowerCase();
@@ -828,19 +840,19 @@ const onMessage =  {
             onMessage.help(receivedMessage);
             return;
         } else if (!Object.keys(regionendpoint).includes(region)) {
-            receivedMessage.react(xmark);
+            reactToMessage(receivedMessage, xmark);
             return false;
         }
         region = regionendpoint[region];
         let reg = /(?<=!duo [\w]+ |!duolosers [\w]+ |!duolength [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i;
         summonerName = message.match(reg);
         if (!summonerName || summonerName.length != 1) {
-            receivedMessage.react(xmark);
+            reactToMessage(receivedMessage, xmark);
             return false;
         }
         summonerName = summonerName[0].toLowerCase();
         if (summonerName.length > 16 || summonerName.length < 3) {
-            receivedMessage.react(xmark);
+            reactToMessage(receivedMessage, xmark);
             return false;
         }
         let replymessage = `Searching for summoner name: '${summonerName}'`;
@@ -850,13 +862,13 @@ const onMessage =  {
             joinQueue();
             let ids = await getID(summonerName, region);
             if (ids.length != 2) {
-                message.edit(`Error finding this summoner and region combination.`);
+                editMessage(message, `Error finding this summoner and region combination.`, "ids length not 2 in lookup");
                 leaveQueue();
                 return;
             }
             let accountid = ids[0],
                 summonerid = ids[1];
-            message.edit(`Summoner found. Updating matches... (this might take a while)`);
+            editMessage(message, `Summoner found. Updating matches... (this might take a while)`, `summ found in lookupmsg`);
             let analysisType;
             if (receivedMessage.content.search(/^!duo /i) > -1) {
                 analysisType = "duo";
@@ -869,11 +881,13 @@ const onMessage =  {
                 return;
             }
             const senderTag = receivedMessage.author.tag;
-            const time = getTimeStamp();
             const query = receivedMessage.content;
-            saveToLog(`${time}: ${senderTag}: ${query}\n`);
-            await onMessage.matchHistoryAndAnalysis(accountid, summonerName, region, message, `(Flex and Solo Queue)`, analysisType);
-            
+            saveToLog(`${senderTag}: ${query}\n`);
+            await onMessage.matchHistoryAndAnalysis(accountid, summonerName, region, message, `(Flex and Solo Queue)`, analysisType);  
+        })
+        .catch(err => {
+            reportError(err);
+            return;
         });
     },
     /**populates match history array and matchcache for the given summoner (and acc id) and region.  Message is the bot's message, type is 
@@ -892,13 +906,7 @@ const onMessage =  {
             matchhistory = matchhistory.concat(flexm);
         }
         //now api search the matches
-        for (let x=0; x < matchhistory.length; x++) {
-            //progress bar halfway through
-            if (x == Math.floor(matchhistory.length / 2)) {
-                await message.edit(`Summoner found. Updating matches... (this might take a while)\n Progress: ${x}/${matchhistory.length}.`);
-            }
-            await getMatchInfo(matchhistory[x], region, matchcache, accountid);
-        }
+        await getMatchInfo(matchhistory, region, matchcache, accountid);
 
         //send the matches off to the correct analysis function
         if (analysisType == "duo") {
@@ -918,7 +926,7 @@ const onMessage =  {
         replyMessage += `Loss Statistics: !duolosers [region] [summoner]  (as an example: !duolosers na albert471)\n`;
         replyMessage += `Length Statistics: !duolength [region] [summoner]  (as an example: !duolength na albert471)\n`;
         replyMessage += `Have questions, feedback, or a bug to report? Message me at APotS#8566 or join <https://discord.gg/zdAajBZ>.`;
-        receivedMessage.channel.send(replyMessage);
+        sendMessage(receivedMessage.channel, replyMessage);
     },
     adminCommands(receivedMessage) { //hardcoding some admin commands;
         if (receivedMessage.content == `!duo guild stats`) {
@@ -944,7 +952,7 @@ const onMessage =  {
                 total += x;
             }
             replyMessage += `\nTotal = ${total}`;
-            receivedMessage.channel.send(replyMessage);
+            sendMessage(receivedMessage.channel, replyMessage);
         }
     }
 };
@@ -967,14 +975,36 @@ function joinQueue() {
 }
 
 async function saveToLog(info) {
-    fs.appendFile("log.txt", info, function (err) {
+    const time = getTimeStamp();
+    let paste = `${time}: ${info}`;
+    fs.appendFile("log.txt", paste, function (err) {
     if (err) throw err;
     });
 }
 
 async function reportError(e) {
-    fs.appendFile("log.txt", `${e}\n`, function (err) {
+    const time = getTimeStamp();
+    let paste = `${time}: ${e}`;
+    fs.appendFile("log.txt", `${paste}\n`, function (err) {
     if (err) throw err;
     });
     console.error(e);
+}
+
+async function reactToMessage(receivedMessage, emoji, error) {
+    let er = "" + error;
+    receivedMessage.react(emoji)
+    .catch(e => reportError(`error in reacttomessage${er}\n${e}`));
+}
+
+async function sendMessage(channel, content, error) {
+    let er = "" + error;
+    channel.send(content)
+    .catch(e=>reportError(`error sending message (sendMessage)${er}\n${e}`));
+}
+
+async function editMessage(message, content, error) {
+    let er = "" + error;
+    message.edit(content)
+    .catch(e => reportError(`error editing message (editMessage)${er}\n${e}`));
 }
