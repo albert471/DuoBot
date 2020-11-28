@@ -7,8 +7,6 @@
 // * @version: 1.5.4
 //=====================================================================================
 
-//todo:  add more features, bug test concurrency/other regions/edge cases/error cases/caching
-// fix max number of duos bug (currently just ccuts off before character limit)
 // for embeds: have it calculate how many large inlines it needs depending on # of duos
 // then remember the 6k char cap (set a var t o5k and have it update whenever you make it bigger)
 
@@ -37,11 +35,11 @@ let queue = 0; //number of items in queue
 
 
 /** Discord assorted variables */
-const supportguild = `734110488870518855`;  //snowflake for support server
-const duogeneral = `734110488870518859`; //snowflake for general chat
-const duosupport = `734110528649298042`; //snowflake for support channel
-const duosuggestions = `734111127092461619`; //suggestions channel;
-const duofaq = `740148839406633051`; // faq channel
+const supportguild = ``;  //snowflake for support server
+const duogeneral = ``; //snowflake for general chat
+const duosupport = ``; //snowflake for support channel
+const duosuggestions = ``; //suggestions channel;
+const duofaq = ``; // faq channel
 
 /** emojis and reaction functions here */ 
 const xmark = `❌`;
@@ -61,7 +59,9 @@ const regionendpoint = {
     "las": "la2",
     "oce": "oc1",
     "tr": "tr1",
-    "ru": "ru"
+    "ru": "ru",
+    "br": "br1",
+    "pbe": "pbe1"
 };
 //convert bot region back to nicer ones for people
 const regionReverse = {
@@ -74,7 +74,9 @@ const regionReverse = {
     "la2": "las",
     "oc1": "oce",
     "tr1": "tr",
-    "ru": "ru"
+    "ru": "ru",
+    "br1": "br",
+    "pbe1": "pbe"
 };
 
 //reads champion file to the champjson object
@@ -844,7 +846,7 @@ const onMessage =  {
             return false;
         }
         region = regionendpoint[region];
-        let reg = /(?<=!duo [\w]+ |!duolosers [\w]+ |!duolength [\w]+ )[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿąćęıłńœśšźżžƒÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸĄĆĘIŁŃŒŚŠŹŻŽªºßˆˇˉﬁﬂµμ\w\d\s]+/i;
+        let reg = /(?<=!duo [\w]+ |!duolosers [\w]+ |!duolength [\w]+ ).+/i;
         summonerName = message.match(reg);
         if (!summonerName || summonerName.length != 1) {
             reactToMessage(receivedMessage, xmark);
