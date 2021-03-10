@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.5.4
+// * @version: 1.6.1
 //=====================================================================================
 
 // for embeds: have it calculate how many large inlines it needs depending on # of duos
@@ -23,10 +23,12 @@ const TeemoJS = require('teemojs');
 let tApi = TeemoJS(api);
 
 /** League API-specific global variables **/
-const seasonsstartepoch = 1578488400000; //start of season 10
+//const seasonsstartepoch = 1578488400000; //start of season 10
+const seasonsstartepoch =   1609920000000 + 172800000; //start of season 11 2-day adjusted for ranked start
 const clashqueue = 700;
 const flexqueue = 440;
 const soloduoqueue = 420;
+
 
 /** Other global variables **/
 let champjson = {};
@@ -43,10 +45,30 @@ const duofaq = ``; // faq channel
 
 /** emojis and reaction functions here */ 
 const xmark = `❌`;
-const flexemoji = `744349180448866394`;
-const soloemoji = `744349540609687633`;
-const bothemoji = `744349716967325787`;
-const trashemoji = `744349998287814849`;
+const flexemoji = ``;
+const soloemoji = ``;
+const bothemoji = ``;
+const trashemoji = ``;
+
+const shifts = {
+    "oc1": -46800,
+    "jp1": -43200,
+    "kr": -39600,
+    "ru": -28800,
+    "eun1": -21600,
+    "tr1": -18000,
+    "euw1": -10800,
+    "br1": -3600,
+    "la2": 0,
+    "la1": 7200,
+    "na1": 10800,
+    "ph": 43200,
+    "id1": 43200,
+    "vn": 46800,
+    "sg": 50400,
+    "tf": 54000,
+    "tw": 57600
+} //offset for s11 start times from CDragon
 
 //converts human readable regions to ones the bot uses 
 const regionendpoint = {
@@ -146,7 +168,7 @@ async function getmatchhistory(queue,region, accountid) {
     let counter = 0;
     let numreturned = -1;
     while (numreturned == -1 || numreturned > 0) {
-        await tApi.get(region, 'match.getMatchlist', accountid, { queue: queue, beginTime: seasonsstartepoch, beginIndex: counter })
+        await tApi.get(region, 'match.getMatchlist', accountid, { queue: queue, beginTime: seasonsstartepoch + shifts[region] * 1000, beginIndex: counter })
         .then(data => {
             counter += 100;
             if (data == null || data == undefined || data.matches == undefined) {
@@ -909,7 +931,11 @@ const onMessage =  {
         }
         //now api search the matches
         await getMatchInfo(matchhistory, region, matchcache, accountid);
-
+        // try remove all remakes here
+        let matchtemp = matchhistory.filter(m => {
+            return matchcache[m].gameDuration > 300;
+        });
+        matchhistory = matchtemp;
         //send the matches off to the correct analysis function
         if (analysisType == "duo") {
             onMessage.duo(matchhistory, accountid, message, summonerName, region, matchcache, type);
