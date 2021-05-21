@@ -4,7 +4,7 @@
 // * Basic discord bot written in Javascript (Discord.js)
 // * When prompted, calculates duo and solo winrate for a given summoner
 // * @author: Albert471
-// * @version: 1.6.1
+// * @version: 1.5.4
 //=====================================================================================
 
 // for embeds: have it calculate how many large inlines it needs depending on # of duos
@@ -37,18 +37,18 @@ let queue = 0; //number of items in queue
 
 
 /** Discord assorted variables */
-const supportguild = ``;  //snowflake for support server
-const duogeneral = ``; //snowflake for general chat
-const duosupport = ``; //snowflake for support channel
-const duosuggestions = ``; //suggestions channel;
-const duofaq = ``; // faq channel
+const supportguild = `734110488870518855`;  //snowflake for support server
+const duogeneral = `734110488870518859`; //snowflake for general chat
+const duosupport = `734110528649298042`; //snowflake for support channel
+const duosuggestions = `734111127092461619`; //suggestions channel;
+const duofaq = `740148839406633051`; // faq channel
 
 /** emojis and reaction functions here */ 
 const xmark = `❌`;
-const flexemoji = ``;
-const soloemoji = ``;
-const bothemoji = ``;
-const trashemoji = ``;
+const flexemoji = `744349180448866394`;
+const soloemoji = `744349540609687633`;
+const bothemoji = `744349716967325787`;
+const trashemoji = `744349998287814849`;
 
 const shifts = {
     "oc1": -46800,
